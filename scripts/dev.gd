@@ -120,6 +120,12 @@ func _run() -> void:
 			await _race("race", [6.0, 12.0, 18.0, 26.0])
 			var it = main().race.items
 			print("아이템 통계 ", it.stats, " 날아가는 것 ", it.shots.size(), " 함정 ", it.traps.size(), " 내 아이템 ", main().race.humans[0].k.items)
+		"gallery":
+			Game.mode = "team" if track == "mushroom_forest" else "race"
+			var ts := []
+			for i in 24:
+				ts.append(3.0 + i * 1.6)
+			await _race(Game.mode, ts)
 		"tour":
 			await _race("time", [8.0, 16.0, 24.0, 32.0, 40.0])
 		"pause":

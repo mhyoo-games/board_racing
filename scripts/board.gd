@@ -373,8 +373,49 @@ func setup(def: Dictionary, rider_id := "", name_text := "", tag_color := Color.
 		tag.no_depth_test = true
 		tag.fixed_size = false
 		tag.position.y = 2.55
-		tag.render_priority = 5
+		tag.render_priority = 6
 		add_child(tag)
+		# 이름표 바탕 (둥근 색 판)
+		var plate := MeshInstance3D.new()
+		var q := QuadMesh.new()
+		var wlen := 0.0
+		for ch in name_text:
+			wlen += 0.44 if ch.unicode_at(0) > 0x2000 else 0.26
+		q.size = Vector2(wlen + 0.3, 0.52)
+		plate.mesh = q
+		var pm := StandardMaterial3D.new()
+		pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		pm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		pm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		pm.no_depth_test = true
+		pm.render_priority = 5
+		pm.albedo_color = Color(tag_color.r, tag_color.g, tag_color.b, 0.82)
+		pm.albedo_texture = _plate_tex()
+		plate.material_override = pm
+		plate.position.y = 2.55
+		plate.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(plate)
+		tag.outline_modulate = Color(0.08, 0.1, 0.2)
+		tag.outline_size = 8
+
+static var _plate: ImageTexture
+
+## 둥근 네모 흰 그림 (이름표 바탕, 색은 재질 색으로)
+static func _plate_tex() -> ImageTexture:
+	if _plate:
+		return _plate
+	var w := 64
+	var h := 24
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var r := 10.0
+	for y in h:
+		for x in w:
+			var cx := clampf(x + 0.5, r, w - r)
+			var cy := clampf(y + 0.5, r, h - r)
+			var d := Vector2(x + 0.5 - cx, y + 0.5 - cy).length()
+			img.set_pixel(x, y, Color(1, 1, 1, clampf(r - d, 0.0, 1.0)))
+	_plate = ImageTexture.create_from_image(img)
+	return _plate
 
 func _make_rider(id: String) -> void:
 	var scene: PackedScene = load(KIT % ("character-" + id))
@@ -394,7 +435,7 @@ func _make_rider(id: String) -> void:
 	var sc := 1.4 / h
 	rider.scale = Vector3.ONE * sc
 	rider.position = Vector3(0, 0.06 - aabb.position.y * sc, 0)
-	rider.rotation.y = -1.05   # 옆으로 서서 탄다 (얼굴은 앞쪽)
+	rider.rotation.y = -1.3   # 옆으로 서서 탄다
 	deck.add_child(rider)
 	anim = rider.find_child("AnimationPlayer", true, false)
 	if anim:
