@@ -3,7 +3,7 @@ extends RefCounted
 ## 사람이 누르는 키를 입력으로. 키보드·게임패드·화면 버튼(터치).
 ##
 ## 키보드: ↑ 가속 / ↓ 브레이크 / ←→ 회전 / Shift 슬라이드 / Space·Ctrl 부스터
-##         A 점프 / S 그랩(GB) / D 360 / F 720
+##         A 점프 / S 그랩(GB) / D 360 / F 720 (공중에서 방향키를 먼저 누르면 다른 묘기: Rules.TRICKS의 cmds)
 ## 게임패드: 왼쪽 스틱·십자키 / RT 가속 / LT 브레이크 / RB 슬라이드 / LB 부스터 / A 점프 / X GB / Y 360 / B 720
 
 static var touch := {}       # 화면 버튼: left, right, brake, slide, boost, jump, gb, 360, 720
@@ -17,7 +17,7 @@ static func _pad(dev: int, b: JoyButton) -> bool:
 static func _axis(dev: int, a: JoyAxis) -> float:
 	return Input.get_joy_axis(dev, a)
 
-## 돌려주는 것: {throttle, steer, slide, boost, jump, gb, t360, t720} (누르고 있는지)
+## 돌려주는 것: {throttle, steer, slide, boost, jump, gb, t360, t720, U, D, L, R} (누르고 있는지)
 static func read() -> Dictionary:
 	var up := _k(KEY_UP)
 	var down := _k(KEY_DOWN)
@@ -60,4 +60,6 @@ static func read() -> Dictionary:
 	if steer_axis != 0.0:
 		steer = steer_axis
 	var thr := (1.0 if up else 0.0) - (1.0 if down else 0.0)
-	return {"throttle": thr, "steer": steer, "slide": slide, "boost": boost, "jump": jump, "gb": gb, "t360": t360, "t720": t720}
+	# 묘기 커맨드용 방향 (누르고 있는지)
+	return {"throttle": thr, "steer": steer, "slide": slide, "boost": boost, "jump": jump, "gb": gb, "t360": t360, "t720": t720,
+		"U": up, "D": down, "L": left or steer < -0.6, "R": right or steer > 0.6}

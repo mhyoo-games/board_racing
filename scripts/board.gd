@@ -7,6 +7,7 @@ const HOVER := 0.42          ## 땅에서 떠 있는 높이
 
 var deck: Node3D            # 보드 (기울고 돈다)
 var spin_node: Node3D       # 묘기로 도는 부분 (보드 + 캐릭터)
+const PIVOT := Vector3(0, 0.75, 0)   # 구르기 축 (몸 가운데쯤)
 var rider: Node3D
 var anim: AnimationPlayer
 var anim_now := ""
@@ -532,15 +533,31 @@ func show_state(k: Dictionary, steer: float, dt: float, ground_h := -999.0) -> v
 	# 묘기: 360·720은 빙글, GB는 보드를 잡고 기울인다
 	var tname: String = k.get("trick", "")
 	var spin: float = float(k.get("spin", 0.0))
-	spin_node.rotation.y = -spin * TAU
+	var flip: float = float(k.get("flip", 0.0))
+	# 옆으로 돌기(spin)와 앞뒤로 구르기(flip). 구르기는 몸 가운데(PIVOT)를 축으로
+	var b := Basis(Vector3.UP, -spin * TAU) * Basis(Vector3.RIGHT, flip * TAU)
+	spin_node.transform = Transform3D(b, PIVOT - b * PIVOT)
 	var want_roll := float(k.slip) * 0.55 + steer * 0.16 * clampf(spd / 20.0, 0.0, 1.0)
 	var want_pitch := 0.0
 	if air:
 		want_pitch = clampf(float(k.vy) * 0.025, -0.25, 0.25)
-	if tname == "gb":
+	var grab := str(Rules.TRICKS[tname].get("grab", "")) if Rules.TRICKS.has(tname) else ""
+	if grab != "":
 		var gt := clampf(float(k.trick_t) / maxf(float(k.trick_dur), 0.01), 0.0, 1.0)
-		want_roll += sin(gt * PI) * 0.9
-		want_pitch += sin(gt * PI) * 0.45
+		var w := sin(gt * PI)
+		match grab:
+			"mid":
+				want_roll += w * 0.9
+				want_pitch += w * 0.45
+			"nose":
+				want_pitch += w * 0.95
+				want_roll += w * 0.2
+			"tail":
+				want_pitch -= w * 0.95
+				want_roll -= w * 0.2
+			"wing":
+				want_roll += sin(gt * TAU) * 1.1
+				want_pitch += w * 0.3
 	if float(k.get("stumble_t", 0.0)) > 0.0:
 		want_roll += sin(bob * 6.0) * 0.3
 	roll = lerpf(roll, want_roll, 1.0 - exp(-10.0 * dt))
@@ -560,7 +577,7 @@ func show_state(k: Dictionary, steer: float, dt: float, ground_h := -999.0) -> v
 	if anim:
 		if float(k.get("stumble_t", 0.0)) > 0.0 or float(k.get("spin_t", 0.0)) > 0.0:
 			_play("fall")
-		elif tname == "gb" or (k.get("slide", false) and not air):
+		elif (Rules.TRICKS.has(tname) and (Rules.TRICKS[tname].has("grab") or Rules.TRICKS[tname].has("flip"))) or (k.get("slide", false) and not air):
 			_play("crouch")
 		elif air:
 			_play("jump" if float(k.vy) > 0.0 else "fall")

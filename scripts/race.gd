@@ -273,15 +273,37 @@ func _countdown(dt: float) -> void:
 					r.hud.pop("출발 부스터!", Color(0.5, 1.0, 0.6))
 					Sound.play("dash")
 
+## 공중에서 최근 누른 방향키 ("LRU" 처럼)
+func cmd_text(r: Dictionary) -> String:
+	var out := ""
+	for c in r.get("cmd", []):
+		out += str(c[0])
+	return out.right(3)
+
 ## 사람 입력: 누른 순간만 점프·묘기·부스터
 func _human_input(r: Dictionary) -> Dictionary:
 	var c := Controls.read()
 	var p: Dictionary = r.prev
 	var tap := func(key: String) -> bool: return bool(c[key]) and not bool(p.get(key, false))
+	# 묘기 커맨드: 공중에서 누른 방향키를 모아 두었다가 S·D·F와 합친다
+	var k: Dictionary = r.k
+	var cmd: Array = r.get_or_add("cmd", [])
+	if k.air:
+		for d in ["U", "D", "L", "R"]:
+			if tap.call(d):
+				cmd.append([d, clock])
+	else:
+		cmd.clear()
+	while not cmd.is_empty() and clock - float(cmd[0][1]) > Rules.CMD_WINDOW:
+		cmd.pop_front()
 	var trick := ""
-	if tap.call("gb"): trick = "gb"
-	elif tap.call("t360"): trick = "360"
-	elif tap.call("t720"): trick = "720"
+	var tkey := ""
+	if tap.call("gb"): tkey = "s"
+	elif tap.call("t360"): tkey = "d"
+	elif tap.call("t720"): tkey = "f"
+	if tkey != "":
+		trick = Rules.trick_for(tkey, cmd_text(r))
+		cmd.clear()
 	var inp := {"throttle": c.throttle, "steer": c.steer, "slide": c.slide, "jump": tap.call("jump"), "trick": trick, "use_boost": tap.call("boost")}
 	r.prev = c.duplicate()
 	r.prev.up = c.throttle > 0.0
@@ -419,6 +441,13 @@ func _events(r: Dictionary) -> void:
 					Sound.play("judge%d" % int(k.jump_judge))
 			"launch":
 				Sound.play("jump", -6.0, 0.9)
+			"spring":
+				Sound.play("jump", 0.0, 1.35)
+				Sound.play("boost", -8.0, 1.6)
+				_shake(r, 0.15)
+			"ring":
+				Sound.play("coin", -2.0, 1.2)
+				hud.say("고리 통과!", Color(1.0, 0.9, 0.4), 0.8)
 			"trick":
 				Sound.play("whoosh", -2.0, randf_range(0.95, 1.08))
 			"trick_ok":
@@ -624,12 +653,12 @@ func leave() -> void:
 
 # ─────────── 온라인 ───────────
 
-## 상태를 짧은 배열로: x, z, vx, vz, yaw, 표시(1 공중, 2 부스터, 4 대시, 8 슬라이드, 16 비틀, 32 빙글), 높이, 묘기 돎, 거리, 도착 시간, 핸들, 묘기 이름
+## 상태를 짧은 배열로: x, z, vx, vz, yaw, 표시(1 공중, 2 부스터, 4 대시, 8 슬라이드, 16 비틀, 32 빙글), 높이, 묘기 돎, 거리, 도착 시간, 핸들, 묘기 이름, 구르기
 func _pack(r: Dictionary) -> Array:
 	var k: Dictionary = r.k
 	var f := (1 if k.air else 0) | (2 if k.boost_t > 0.0 else 0) | (4 if k.dash_t > 0.0 else 0) | (8 if k.slide else 0) | (16 if k.stumble_t > 0.0 else 0) | (32 if k.spin_t > 0.0 else 0)
 	return [snappedf(k.pos.x, 0.01), snappedf(k.pos.y, 0.01), snappedf(k.vel.x, 0.01), snappedf(k.vel.y, 0.01),
-		snappedf(k.yaw, 0.001), f, snappedf(float(k.alt), 0.01), snappedf(float(k.spin), 0.01), snappedf(r.dist, 0.01), snappedf(r.finish, 0.001), snappedf(r.steer, 0.01), str(k.trick)]
+		snappedf(k.yaw, 0.001), f, snappedf(float(k.alt), 0.01), snappedf(float(k.spin), 0.01), snappedf(r.dist, 0.01), snappedf(r.finish, 0.001), snappedf(r.steer, 0.01), str(k.trick), snappedf(float(k.flip), 0.01)]
 
 func _apply(r: Dictionary, a: Array) -> void:
 	if a.size() < 12:
@@ -649,6 +678,7 @@ func _apply(r: Dictionary, a: Array) -> void:
 		r.finish = float(a[9])
 	r.steer = float(a[10])
 	k.trick = str(a[11])
+	k.flip = float(a[12]) if a.size() > 12 else 0.0
 	if absf((k.pos as Vector2).distance_to(r.net.pos)) > 12.0:
 		k.pos = r.net.pos
 		k.yaw = r.net.yaw

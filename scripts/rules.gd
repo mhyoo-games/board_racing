@@ -9,6 +9,8 @@ extends RefCounted
 ## 조작: 방향키(↑ 가속, ↓ 브레이크, ←→ 회전), Shift 슬라이드(급회전), Space·Ctrl 부스터
 ##   A 점프 — 점프대 위에서 누르면 높이 뜬다. 점프대 끝에 가까울수록 좋은 판정 (GOOD < NICE < EXCELLENT)
 ##   S 그랩 · D 360 · F 720 — 공중 묘기. 땅에 닿기 전에 끝나야 성공, 아슬아슬하게 끝낼수록 좋은 판정
+##   커맨드: 공중에서 방향키를 누른 뒤 S·D·F → 다른 묘기 (↑D 앞구르기, ↓D 뒤구르기, ←→D 꽈배기 …, TRICKS의 cmds)
+##   묘기 중에 다음 묘기를 누르면 예약돼 끊김 없이 이어진다. 많이 이을수록 점수가 커진다(CHAIN_BONUS)
 ##   묘기·점프 판정으로 게이지가 차고, 다 차면 부스터 하나 (두 개까지)
 
 const KMH := 4.0                 ## 화면에 보이는 속도 = 속력 × KMH
@@ -16,7 +18,7 @@ const MAX_BOOSTS := 2
 const START_WINDOW := 0.4        ## 출발 직전 이 시간 안에 가속을 누르면 출발 부스터
 const STEER_IN := 6.0
 const STEER_OUT := 9.0
-const GRAVITY := 26.0
+const GRAVITY := 13.0             ## 공중에 오래, 너무 높지 않게 둥실 (예전 26)
 const HOP := 0.55                ## 땅에서 점프 = 점프 힘 × 이만큼
 const RAMP_LEN := 10.0           ## 점프대 길이(m)
 const RAMP_H := 1.4              ## 점프대 끝 높이
@@ -28,15 +30,48 @@ const TRICK_GAUGE := 0.075       ## 묘기 점수 1점당 게이지
 const DASH_TIME := 0.7           ## EXCELLENT 착지·발판 부스터 길이
 const STUMBLE_TIME := 0.9        ## 묘기 실패하면 비틀거리는 시간
 
-## 묘기: 이름 → {label 화면 글자, dur 걸리는 시간(초), pts 점수, spin 도는 바퀴}
+## 묘기: 이름 → {label 화면 글자, key 누르는 키(s·d·f), cmds 먼저 누를 방향키(U↑ D↓ L← R→, ""는 그냥), dur 걸리는 시간(초),
+##   pts 점수, spin 옆으로 도는 바퀴, flip 앞(+)·뒤(-)로 구르는 바퀴, grab 잡는 곳(mid·nose·tail·wing), lv 컴퓨터가 쓰는 실력}
 const TRICKS := {
-	"gb": {"label": "GB", "dur": 0.38, "pts": 1, "spin": 0.0},
-	"360": {"label": "360", "dur": 0.62, "pts": 2, "spin": 1.0},
-	"720": {"label": "720", "dur": 1.0, "pts": 4, "spin": 2.0},
+	"gb": {"label": "GB", "key": "s", "cmds": [""], "dur": 0.38, "pts": 1, "grab": "mid", "lv": 0.0},
+	"nose": {"label": "앞잡기", "key": "s", "cmds": ["U"], "dur": 0.45, "pts": 2, "grab": "nose", "lv": 0.6},
+	"tail": {"label": "뒤잡기", "key": "s", "cmds": ["D"], "dur": 0.45, "pts": 2, "grab": "tail", "lv": 0.6},
+	"wing": {"label": "날개 펴기", "key": "s", "cmds": ["LR", "RL"], "dur": 0.6, "pts": 3, "grab": "wing", "lv": 0.8},
+	"360": {"label": "360", "key": "d", "cmds": [""], "dur": 0.62, "pts": 2, "spin": 1.0, "lv": 0.0},
+	"front": {"label": "앞구르기", "key": "d", "cmds": ["U"], "dur": 0.72, "pts": 3, "flip": 1.0, "lv": 0.6},
+	"back": {"label": "뒤구르기", "key": "d", "cmds": ["D"], "dur": 0.72, "pts": 3, "flip": -1.0, "lv": 0.6},
+	"screw": {"label": "꽈배기", "key": "d", "cmds": ["LR", "RL"], "dur": 0.9, "pts": 4, "spin": 1.0, "flip": -1.0, "lv": 0.8},
+	"720": {"label": "720", "key": "f", "cmds": [""], "dur": 1.0, "pts": 4, "spin": 2.0, "lv": 0.0},
+	"dfront": {"label": "두 바퀴 앞구르기", "key": "f", "cmds": ["U"], "dur": 1.15, "pts": 6, "flip": 2.0, "lv": 0.7},
+	"dback": {"label": "두 바퀴 뒤구르기", "key": "f", "cmds": ["D"], "dur": 1.15, "pts": 6, "flip": -2.0, "lv": 0.7},
+	"1080": {"label": "1080", "key": "f", "cmds": ["LR", "RL"], "dur": 1.35, "pts": 7, "spin": 3.0, "lv": 0.85},
+	"storm": {"label": "회오리", "key": "f", "cmds": ["DU", "UD"], "dur": 1.5, "pts": 9, "spin": 2.0, "flip": -2.0, "lv": 0.9},
 }
+const CMD_WINDOW := 0.8          ## 방향키를 누르고 이 시간 안에 S·D·F를 눌러야 커맨드로 친다
+const CHAIN_BONUS := 0.25        ## 한 번 점프에 묘기를 n개 이으면 점수 × (1 + 0.25 × (n-1))
+const SPRING_V := 12.0           ## 스프링 발판이 튕겨 주는 위로 속도
+const RING_GAUGE := 0.12         ## 공중 고리를 지나가면 차는 게이지
+## 점프대 크기: 길이(m), 끝 높이, 점프 힘 배율
+const RAMPS := {"small": [5.0, 0.7, 0.75], "normal": [10.0, 1.4, 1.0], "big": [16.0, 2.6, 1.12]}
 const JUDGES := ["GOOD", "NICE", "EXCELLENT"]
 const JUDGE_MULT := [1.0, 1.45, 2.1]
-const JUMP_MULT := [0.82, 1.0, 1.2]      ## 점프대 판정별 점프 힘
+const JUMP_MULT := [0.82, 1.0, 1.2]      ## 커맨드로 묘기 고르기: key = "s"|"d"|"f", cmd = 공중에서 최근 누른 방향키 ("LRU" 처럼, 오래된 것이 앞)
+## 끝부분이 가장 길게 맞는 커맨드의 묘기, 없으면 그 키의 기본 묘기
+static func trick_for(key: String, cmd: String) -> String:
+	var best := ""
+	var best_len := -1
+	for id in TRICKS:
+		var t: Dictionary = TRICKS[id]
+		if str(t.key) != key:
+			continue
+		for c in t.cmds:
+			var cs := str(c)
+			if cs.length() > best_len and cmd.ends_with(cs):
+				best = id
+				best_len = cs.length()
+	return best
+
+## 점프대 판정별 점프 힘
 const JUMP_GAUGE := [0.03, 0.06, 0.11]
 
 # ────────────────────────── 보드 능력치 ──────────────────────────
@@ -52,7 +87,7 @@ static func board_stats(def: Dictionary) -> Dictionary:
 		"accel": 12.0 + g.call("accel") * 1.6,          # 13.6 ~ 28
 		"turn": 1.65 + g.call("handling") * 0.1,        # 초당 회전(라디안)
 		"grip": 9.0 + g.call("handling") * 0.8,
-		"jump_v": 9.6 + g.call("jump") * 0.34,          # 점프 힘 (위로 속도)
+		"jump_v": 7.2 + g.call("jump") * 0.25,          # 점프 힘 (위로 속도)
 		"trick_speed": 0.86 + g.call("trick") * 0.03,   # 묘기 빠르기 (1보다 크면 빨리 끝남)
 		"gauge_gain": 0.7 + g.call("trick") * 0.06,     # 게이지가 차는 빠르기 (능력치 3 → 0.88, 9 → 1.24)
 		"boost_time": 1.6 + g.call("boost") * 0.09,
@@ -65,7 +100,7 @@ static func new_board(pos: Vector2, yaw: float, alt := 0.0) -> Dictionary:
 	return {
 		"pos": pos, "vel": Vector2.ZERO, "yaw": yaw, "yaw_rate": 0.0, "steer_s": 0.0,
 		"alt": alt, "vy": 0.0, "air": false, "air_t": 0.0, "gvy": 0.0, "prev_g": alt,
-		"trick": "", "trick_t": 0.0, "trick_dur": 0.0, "done": [], "since_trick": 0.0, "spin": 0.0,
+		"trick": "", "trick_t": 0.0, "trick_dur": 0.0, "done": [], "since_trick": 0.0, "spin": 0.0, "flip": 0.0, "next": "", "rings": [],
 		"gauge": 0.0, "boosts": 0, "boost_t": 0.0, "dash_t": 0.0, "slide": false, "slip": 0.0,
 		"ground": "road", "offroad": false, "stumble_t": 0.0, "combo": 0, "jump_judge": -1,
 		"events": [], "judge": {}, "fell": false, "points": 0, "tricks": 0, "best_judge": -1,
@@ -266,16 +301,25 @@ static func _vertical(k: Dictionary, inp: Dictionary, st: Dictionary, g: Diction
 			k.jump_judge = -1
 			if ramp_t >= 0.0:
 				var j := ramp_judge(ramp_t)
-				mult = JUMP_MULT[j]
+				mult = JUMP_MULT[j] * float(g.get("ramp_pow", 1.0))
 				k.jump_judge = j
 				k.gauge += JUMP_GAUGE[j] * st.gauge_gain
 				k.judge = {"word": JUDGES[j], "label": "JUMP", "t": 0.0}
 			k.air = true
-			k.vy = st.jump_v * mult + maxf(0.0, float(k.gvy))
+			k.vy = st.jump_v * mult + maxf(0.0, float(k.gvy)) * 0.5
 			k.air_t = 0.0
 			k.done = []
 			k.since_trick = 0.0
 			k.events.append("jump")
+		elif bool(g.get("spring", false)):
+			# 스프링 발판: 저절로 높이 튕긴다
+			k.air = true
+			k.vy = SPRING_V + maxf(0.0, float(k.gvy))
+			k.air_t = 0.0
+			k.done = []
+			k.since_trick = 0.0
+			k.jump_judge = -1
+			k.events.append("spring")
 		elif gh < float(k.alt) - 0.12:
 			# 땅이 꺼졌다 (점프대 끝·낭떠러지): 그대로 날아간다
 			k.air = true
@@ -293,22 +337,38 @@ static func _vertical(k: Dictionary, inp: Dictionary, st: Dictionary, g: Diction
 	k.air_t += dt
 	k.vy -= GRAVITY * dt
 	k.alt += k.vy * dt
-	# 묘기
+	# 공중 고리: 가운데로 지나가면 게이지·점수
+	var ring: Dictionary = g.get("ring", {})
+	if not ring.is_empty() and not (k.rings as Array).has(int(ring.i)):
+		if Vector2(float(ring.lat), float(k.alt) + 0.8 - float(ring.y)).length() < float(ring.r):
+			(k.rings as Array).append(int(ring.i))
+			k.gauge += RING_GAUGE * st.gauge_gain
+			k.points = int(k.points) + 15
+			k.events.append("ring")
+	# 묘기 (하는 중에 누른 것은 예약해 두었다가 끝나자마자 잇는다)
 	var t_in: String = str(inp.get("trick", ""))
-	if k.trick == "" and t_in != "" and TRICKS.has(t_in) and not stumbling:
-		k.trick = t_in
-		k.trick_t = 0.0
-		k.trick_dur = trick_dur(t_in, st)
-		k.events.append("trick")
+	if t_in != "" and TRICKS.has(t_in) and not stumbling:
+		if k.trick == "":
+			_begin_trick(k, t_in, st)
+		elif str(k.next) == "":
+			k.next = t_in
 	if k.trick != "":
 		k.trick_t += dt
-		k.spin = float(TRICKS[k.trick].spin) * clampf(k.trick_t / maxf(k.trick_dur, 0.01), 0.0, 1.0)
+		var tk: Dictionary = TRICKS[k.trick]
+		var f := clampf(k.trick_t / maxf(k.trick_dur, 0.01), 0.0, 1.0)
+		var e := f * f * (3.0 - 2.0 * f)
+		k.spin = float(tk.get("spin", 0.0)) * e
+		k.flip = float(tk.get("flip", 0.0)) * e
 		if k.trick_t >= k.trick_dur:
 			(k.done as Array).append(k.trick)
 			k.trick = ""
 			k.trick_t = 0.0
 			k.spin = 0.0
+			k.flip = 0.0
 			k.since_trick = 0.0
+			if str(k.next) != "":
+				_begin_trick(k, str(k.next), st)
+				k.next = ""
 	elif not (k.done as Array).is_empty():
 		k.since_trick += dt
 	# 땅보다 한참 아래: 낭떠러지로 떨어지는 중 (길 옆면에 걸리지 않고 계속 떨어진다)
@@ -320,6 +380,12 @@ static func _vertical(k: Dictionary, inp: Dictionary, st: Dictionary, g: Diction
 	if k.alt <= gh and k.vy <= 0.0:
 		_land(k, st, gh)
 
+static func _begin_trick(k: Dictionary, id: String, st: Dictionary) -> void:
+	k.trick = id
+	k.trick_t = 0.0
+	k.trick_dur = trick_dur(id, st)
+	k.events.append("trick")
+
 ## 착지: 묘기가 덜 끝났으면 실패(비틀), 다 끝났으면 판정
 static func _land(k: Dictionary, st: Dictionary, gh: float) -> void:
 	k.air = false
@@ -327,6 +393,9 @@ static func _land(k: Dictionary, st: Dictionary, gh: float) -> void:
 	k.prev_g = gh
 	k.gvy = 0.0
 	k.vy = 0.0
+	k.next = ""
+	k.rings = []
+	k.flip = 0.0
 	var done: Array = k.done
 	if k.trick != "":
 		if k.trick_dur - k.trick_t <= LAND_GRACE:
@@ -355,7 +424,8 @@ static func _land(k: Dictionary, st: Dictionary, gh: float) -> void:
 	for t in done:
 		pts += int(TRICKS[t].pts)
 		names.append(TRICKS[t].label)
-	pts += done.size() - 1                 # 이어서 하면 덤
+	var chain := 1.0 + CHAIN_BONUS * float(done.size() - 1)      # 이어서 할수록 크게
+	pts = int(round(pts * chain))
 	k.combo = int(k.combo) + 1
 	var combo_mult := 1.0 + 0.1 * minf(float(k.combo) - 1.0, 5.0)
 	k.gauge += TRICK_GAUGE * pts * JUDGE_MULT[j] * combo_mult * st.gauge_gain
@@ -364,7 +434,7 @@ static func _land(k: Dictionary, st: Dictionary, gh: float) -> void:
 	k.best_judge = maxi(int(k.best_judge), j)
 	if j == 2:
 		k.dash_t = maxf(k.dash_t, DASH_TIME)
-	k.judge = {"word": JUDGES[j], "label": " + ".join(names), "t": 0.0, "combo": k.combo}
+	k.judge = {"word": JUDGES[j], "label": " + ".join(names), "t": 0.0, "combo": k.combo, "chain": done.size()}
 	k.events.append("trick_ok")
 	k.done = []
 
@@ -446,6 +516,7 @@ static func build_track(def: Dictionary, spacing := 2.0) -> Dictionary:
 	var ground_wall: float = hw + float(def.get("verge", 5.0))
 	# 구간 (미터로)
 	var zones := []
+	var rings := []
 	for z in def.get("zones", []):
 		var zt := str(z.type)
 		var e := {"type": zt}
@@ -453,10 +524,21 @@ static func build_track(def: Dictionary, spacing := 2.0) -> Dictionary:
 			# at(비율)에서 시작해 len 미터
 			e.s0 = float(z.at) * s
 			e.s1 = e.s0 + float(z.len)
-		elif zt in ["ramp", "pad"]:
+		elif zt == "ramp":
+			var sz: Array = RAMPS[str(z.get("size", "normal"))]
 			var at := float(z.at) * s
-			e.s0 = at - (RAMP_LEN if zt == "ramp" else 2.5)
+			e.s0 = at - float(sz[0])
 			e.s1 = at
+			e.h = float(sz[1])
+			e.pow = float(sz[2])
+			e.size = str(z.get("size", "normal"))
+		elif zt in ["pad", "spring"]:
+			var at2 := float(z.at) * s
+			e.s0 = at2 - (2.5 if zt == "pad" else 3.0)
+			e.s1 = at2
+		elif zt == "ring":
+			rings.append({"s": float(z.at) * s, "h": float(z.get("h", 6.0)), "r": float(z.get("r", 3.2))})
+			continue
 		else:
 			e.s0 = float(z.from) * s
 			e.s1 = float(z.to) * s
@@ -471,7 +553,7 @@ static func build_track(def: Dictionary, spacing := 2.0) -> Dictionary:
 	return {
 		"pts": pts, "tan": tang, "nrm": norm, "cum": cum, "curv": curv, "length": s, "n": m,
 		"half_width": hw, "wall": ground_wall, "laps": int(def.get("laps", 3)),
-		"hgt": hgt, "walls": walls, "has_bridge": bridge, "zones": zones, "sky": sky,
+		"hgt": hgt, "walls": walls, "has_bridge": bridge, "zones": zones, "rings": rings, "sky": sky,
 	}
 
 ## 출발선부터 거리 s 인 가운데 선 위치 {pos, tan, nrm, h, i}
@@ -561,6 +643,8 @@ static func ground_at(tr: Dictionary, loc: Dictionary) -> Dictionary:
 	var h: float = loc.h
 	var ramp_t := -1.0
 	var pad := false
+	var spring := false
+	var ramp_pow := 1.0
 	var z := zone_at(tr, loc.s)
 	if not z.is_empty():
 		var t := fposmod(float(loc.s) - float(z.s0), tr.length) / maxf(float(z.s1) - float(z.s0), 0.01)
@@ -568,7 +652,8 @@ static func ground_at(tr: Dictionary, loc: Dictionary) -> Dictionary:
 			"ramp":
 				if lat <= hw + 0.5:
 					ramp_t = clampf(t, 0.0, 1.0)
-					h += RAMP_H * ramp_t
+					h += float(z.get("h", RAMP_H)) * ramp_t
+					ramp_pow = float(z.get("pow", 1.0))
 					kind = "road"
 			"stairs":
 				if lat <= hw + 0.5:
@@ -581,7 +666,17 @@ static func ground_at(tr: Dictionary, loc: Dictionary) -> Dictionary:
 				h = -20.0
 			"pad":
 				pad = on_road and lat < hw * 0.6
-	return {"h": h, "kind": kind, "ramp_t": ramp_t, "pad": pad}
+			"spring":
+				spring = on_road and lat < hw * 0.7
+	var out := {"h": h, "kind": kind, "ramp_t": ramp_t, "pad": pad, "spring": spring, "ramp_pow": ramp_pow}
+	# 가까운 공중 고리 (지나가는지는 step이 높이를 보고 정한다)
+	var rings: Array = tr.get("rings", [])
+	for i in rings.size():
+		var rg: Dictionary = rings[i]
+		var d: float = fposmod(float(loc.s) - float(rg.s) + float(tr.length) * 0.5, float(tr.length)) - float(tr.length) * 0.5
+		if absf(d) < 1.6:
+			out.ring = {"i": i, "y": float(loc.h) + float(rg.h), "lat": float(loc.lat), "r": float(rg.r)}
+	return out
 
 ## 울타리 밖으로 나가면 안으로 밀고 바깥쪽 속도를 없앤다. 부딪혔으면 true
 static func wall_push(tr: Dictionary, k: Dictionary, loc: Dictionary, radius := 0.7) -> bool:
@@ -733,11 +828,19 @@ static func ai_input(k: Dictionary, tr: Dictionary, line: PackedFloat32Array, lo
 			plan.tdelay = (1.0 - skill) * 0.2 * rnd
 		if k.air_t > float(plan.tdelay):
 			# 남은 시간에 들어가는 가장 큰 묘기를, 잘하면 끝나자마자 땅에 닿게 기다렸다가 건다
+			# 큰 것부터: 뒤에 시간이 넉넉히 남으면 바로 걸고(이어 하기), 마지막 묘기는 끝나자마자 닿게 기다린다
 			var slack := 0.05 + (1.0 - skill) * 0.4
-			for name in ["720", "360", "gb"]:
-				var need := trick_dur(name, st if not st.is_empty() else {"trick_speed": 1.0}) + greed
+			var ids := TRICKS.keys().filter(func(id): return float(TRICKS[id].lv) <= skill + 0.001)
+			ids.sort_custom(func(a, b): return float(TRICKS[a].dur) > float(TRICKS[b].dur))
+			var sst: Dictionary = st if not st.is_empty() else {"trick_speed": 1.0}
+			# 오래 뜨면 처음 것은 중간 크기로 바로 걸어 뒤에 하나 더 이을 자리를 남긴다
+			var cap := left * 0.62 if left > 1.3 and skill > 0.4 else INF
+			for name in ids:
+				var need := trick_dur(name, sst) + greed
+				if need > cap:
+					continue
 				if left > need:
-					if left - need < slack or k.vy < 0.0 and left - need < slack + 0.15:
+					if cap < INF or left - need > 0.5 or left - need < slack or k.vy < 0.0 and left - need < slack + 0.15:
 						trick = name
 					break
 	if not k.air:

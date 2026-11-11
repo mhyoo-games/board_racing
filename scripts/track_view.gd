@@ -21,6 +21,8 @@ var theme := "grass"
 var rng := RandomNumberGenerator.new()
 var _meshes := {}
 var pads: Array = []      # 부스터 발판 (반짝이게)
+var springs: Array = []   # 스프링 발판 윗판 (통통)
+var rings_n: Array = []   # 공중 고리 (빙글)
 var _t := 0.0
 
 func ground(i: int) -> bool:
@@ -296,6 +298,9 @@ func _zones() -> void:
 			"ice": _ice(z)
 			"pad": _pad(z)
 			"gap": _gap(z)
+			"spring": _spring(z)
+	for i in trk.get("rings", []).size():
+		_ring(trk.rings[i])
 
 ## 거리 s, 옆 lat 자리의 3D 점 (높이 + 더할 높이)
 func _at(s: float, lat: float, up := 0.0) -> Vector3:
@@ -307,6 +312,9 @@ func _ramp(z: Dictionary) -> void:
 	var hw: float = trk.half_width + 0.3
 	var s0: float = z.s0
 	var s1: float = z.s1
+	var RH: float = float(z.get("h", Rules.RAMP_H))
+	var big := str(z.get("size", "")) == "big"
+	var small := str(z.get("size", "")) == "small"
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var steps := 10
@@ -315,11 +323,15 @@ func _ramp(z: Dictionary) -> void:
 	for k in steps:
 		var a := s0 + (s1 - s0) * k / steps
 		var b := s0 + (s1 - s0) * (k + 1) / steps
-		var ha := Rules.RAMP_H * float(k) / steps
-		var hb := Rules.RAMP_H * float(k + 1) / steps
+		var ha := RH * float(k) / steps
+		var hb := RH * float(k + 1) / steps
 		# 끝 쪽 16%는 EXCELLENT 자리 (노랑), 그 앞 NICE (주황), 처음은 나무
 		var t := float(k + 1) / steps
 		var c := wood if k % 2 == 0 else wood2
+		if big:
+			c = Color(0.92, 0.25, 0.22) if k % 2 == 0 else Color(0.97, 0.95, 0.92)
+		elif small:
+			c = Color(0.35, 0.75, 0.95) if k % 2 == 0 else Color(0.3, 0.62, 0.85)
 		if t > 0.84:
 			c = Color(1.0, 0.86, 0.25)
 		elif t > 0.6:
@@ -337,7 +349,7 @@ func _ramp(z: Dictionary) -> void:
 				st.set_normal(Vector3.UP)
 				st.add_vertex(v)
 	# 끝 벽 (앞에서 보이는 면)
-	var e := [_at(s1, -hw, 0.0), _at(s1, hw, 0.0), _at(s1, -hw, Rules.RAMP_H + 0.03), _at(s1, -hw, Rules.RAMP_H + 0.03), _at(s1, hw, 0.0), _at(s1, hw, Rules.RAMP_H + 0.03)]
+	var e := [_at(s1, -hw, 0.0), _at(s1, hw, 0.0), _at(s1, -hw, RH + 0.03), _at(s1, -hw, RH + 0.03), _at(s1, hw, 0.0), _at(s1, hw, RH + 0.03)]
 	for v in e:
 		st.set_color(wood2.darkened(0.3))
 		st.set_normal(Vector3.UP)
@@ -353,11 +365,91 @@ func _ramp(z: Dictionary) -> void:
 	# 화살표 셋 (위로 뛰라고)
 	for f in [0.25, 0.45]:
 		var s: float = s0 + (s1 - s0) * f
-		_chevron(s, Rules.RAMP_H * f + 0.06, Color(1, 1, 1, 0.9), 1.4)
-	# 양옆 깃발 기둥
-	for sd in [-1.0, 1.0]:
-		var p := _at(s1, sd * (hw + 0.6))
-		_put("flag", p, rng.randf() * TAU, 1.6)
+		_chevron(s, RH * f + 0.06, Color(1, 1, 1, 0.9), 1.4)
+	# 양옆 깃발 기둥 (큰 점프대는 더 높게, 작은 점프대는 없음)
+	if not small:
+		for sd in [-1.0, 1.0]:
+			var p := _at(s1, sd * (hw + 0.6))
+			_put("flag", p, rng.randf() * TAU, 2.4 if big else 1.6)
+	if big:
+		# 받침 기둥
+		for f in [0.5, 0.8, 1.0]:
+			for sd in [-1.0, 1.0]:
+				var q := _at(s0 + (s1 - s0) * f, sd * (hw - 0.3))
+				var mi2 := MeshInstance3D.new()
+				var bm := BoxMesh.new()
+				bm.size = Vector3(0.3, RH * f, 0.3)
+				mi2.mesh = bm
+				mi2.material_override = BoardView.mat(Color(0.45, 0.3, 0.2))
+				mi2.position = q + Vector3(0, RH * f * 0.5, 0)
+				add_child(mi2)
+
+## 스프링 발판: 파란 판 + 아래 용수철 + 위로 화살표
+func _spring(z: Dictionary) -> void:
+	var s0: float = z.s0
+	var s1: float = z.s1
+	var p := Rules.point_at(trk, (s0 + s1) * 0.5)
+	var t: Vector2 = p.tan
+	var q: Vector2 = p.pos
+	var root := Node3D.new()
+	root.position = Vector3(q.x, float(p.h), q.y)
+	root.rotation.y = atan2(t.x, t.y)
+	add_child(root)
+	var w: float = float(trk.half_width) * 1.4
+	var base := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(w, 0.12, s1 - s0)
+	base.mesh = bm
+	base.material_override = BoardView.mat(Color(0.2, 0.25, 0.35))
+	base.position.y = 0.06
+	root.add_child(base)
+	var coils := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.22; tm.outer_radius = 0.32; tm.rings = 12; tm.ring_segments = 6
+	for i in 5:
+		for lay in 2:
+			var c := MeshInstance3D.new()
+			c.mesh = tm
+			c.material_override = BoardView.mat(Color(0.85, 0.88, 0.95), false, false, 0.6)
+			c.position = Vector3(-w * 0.4 + i * w * 0.2, 0.16 + lay * 0.1, 0)
+			root.add_child(c)
+	var top := MeshInstance3D.new()
+	var tb := BoxMesh.new()
+	tb.size = Vector3(w, 0.1, s1 - s0)
+	top.mesh = tb
+	top.material_override = BoardView.mat(Color(0.25, 0.65, 1.0), true)
+	top.position.y = 0.4
+	root.add_child(top)
+	springs.append(top)
+	for i in 2:
+		var ch := _chevron((s0 + s1) * 0.5, 0.48 + i * 0.01, Color(1, 1, 1, 0.95), 1.1 - i * 0.3, true)
+		ch.position = root.position + Vector3(0, 0.48, 0)
+
+## 공중 고리: 길 위 높이 h에 떠 있는 빛나는 고리 (지나가면 게이지)
+func _ring(rg: Dictionary) -> void:
+	var p := Rules.point_at(trk, float(rg.s))
+	var t: Vector2 = p.tan
+	var q: Vector2 = p.pos
+	var r: float = rg.r
+	var mi := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = r - 0.22; tm.outer_radius = r + 0.22; tm.rings = 40; tm.ring_segments = 10
+	mi.mesh = tm
+	mi.material_override = BoardView.mat(Color(1.0, 0.82, 0.25), true)
+	mi.position = Vector3(q.x, float(p.h) + float(rg.h), q.y)
+	# 길 방향을 보고 서 있게 (고리 구멍이 길을 따라)
+	mi.basis = Basis(Vector3.UP, atan2(t.x, t.y)) * Basis(Vector3.RIGHT, PI / 2)
+	add_child(mi)
+	rings_n.append(mi)
+	# 아래에서 위로 가는 줄 (어디 있는지 보이게)
+	var line := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.05; cm.bottom_radius = 0.05; cm.height = float(rg.h) - r
+	line.mesh = cm
+	line.material_override = BoardView.mat(Color(1.0, 0.9, 0.5, 0.5), false, true)
+	(line.material_override as StandardMaterial3D).transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	line.position = Vector3(q.x, float(p.h) + (float(rg.h) - r) * 0.5, q.y)
+	add_child(line)
 
 ## 길 위 꺾쇠(▲) 표시
 func _chevron(s: float, up: float, c: Color, size: float, emit := false) -> MeshInstance3D:
@@ -479,6 +571,10 @@ func _gap(z: Dictionary) -> void:
 
 func _process(dt: float) -> void:
 	_t += dt
+	for sp in springs:
+		(sp as Node3D).position.y = 0.4 + absf(sin(_t * 5.0)) * 0.1
+	for rn in rings_n:
+		(rn as Node3D).rotate_object_local(Vector3.UP, dt * 1.2)
 	for p in pads:
 		var n: MeshInstance3D = p.node
 		var on := int(_t * 6.0) % 3 == int(p.i)

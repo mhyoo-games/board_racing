@@ -37,7 +37,10 @@ func judge(j: Dictionary) -> void:
 		return
 	var w := str(j.get("word", ""))
 	pops = pops.filter(func(p): return p.t < 0.2)
-	pops.append({"word": w + ("!" if w != "MISS" else ""), "label": str(j.get("label", "")), "combo": int(j.get("combo", 0)), "t": 0.0, "color": JUDGE_COLORS.get(w, Color.WHITE)})
+	var lab := str(j.get("label", ""))
+	if int(j.get("chain", 1)) >= 2:
+		lab += "   %d연속!" % int(j.chain)
+	pops.append({"word": w + ("!" if w != "MISS" else ""), "label": lab, "combo": int(j.get("combo", 0)), "t": 0.0, "color": JUDGE_COLORS.get(w, Color.WHITE)})
 
 func key_flash(key: String) -> void:
 	keys[key] = 0.25
@@ -209,16 +212,31 @@ func _timing(u: float, w: float, h: float, k: Dictionary) -> void:
 		if gh < -5.0:
 			gh = float(Rules.locate(race.trk, k.pos, racer.hint).h)
 		var left := Rules.air_left(float(k.vy), float(k.alt), gh)
-		var scale := 1.4
+		var scale := 2.4
 		_pill(Rect2(bx - 6 * u, by - 30 * u, bw + 12 * u, bh + 38 * u), Color(0.05, 0.07, 0.14, 0.6), 10 * u)
 		draw_rect(Rect2(bx, by, bw * clampf(left / scale, 0.0, 1.0), bh), Color(0.5, 0.85, 1.0, 0.85))
+		var cmd: String = race.cmd_text(racer) if racer.get("human", false) else ""
+		var arrows := ""
+		for c in cmd:
+			arrows += {"U": "↑", "D": "↓", "L": "←", "R": "→"}[c]
 		if str(k.trick) != "":
 			var rem := maxf(0.0, float(k.trick_dur) - float(k.trick_t))
+			if str(k.next) != "":
+				rem += Rules.trick_dur(str(k.next), racer.st)
 			var col := Color(0.55, 1.0, 0.45) if rem <= left else Color(1.0, 0.45, 0.4)
 			draw_rect(Rect2(bx, by + bh * 0.25, bw * clampf(rem / scale, 0.0, 1.0), bh * 0.5), col)
-			_txt("묘기 중…", Vector2(bx, by - 8 * u), int(18 * u), col, HORIZONTAL_ALIGNMENT_CENTER, bw)
+			var nm: String = Rules.TRICKS[k.trick].label
+			if str(k.next) != "":
+				nm += " → " + str(Rules.TRICKS[k.next].label)
+			elif arrows != "":
+				nm += "   다음: " + arrows + " + S·D·F"
+			_txt(nm, Vector2(bx, by - 8 * u), int(18 * u), col, HORIZONTAL_ALIGNMENT_CENTER, bw)
+		elif arrows != "":
+			# 지금 누르면 나갈 묘기 미리 보기
+			var pv := "%s  S %s · D %s · F %s" % [arrows, Rules.TRICKS[Rules.trick_for("s", cmd)].label, Rules.TRICKS[Rules.trick_for("d", cmd)].label, Rules.TRICKS[Rules.trick_for("f", cmd)].label]
+			_txt(pv, Vector2(bx - 60 * u, by - 8 * u), int(17 * u), Color(1, 0.95, 0.6), HORIZONTAL_ALIGNMENT_CENTER, bw + 120 * u)
 		else:
-			_txt("S · D · F 묘기!" if left > 0.35 else "착지!", Vector2(bx, by - 8 * u), int(18 * u), Color(1, 1, 0.85), HORIZONTAL_ALIGNMENT_CENTER, bw)
+			_txt("방향키 + S · D · F 묘기!" if left > 0.35 else "착지!", Vector2(bx, by - 8 * u), int(18 * u), Color(1, 1, 0.85), HORIZONTAL_ALIGNMENT_CENTER, bw)
 
 func _keys(u: float, h: float, k: Dictionary) -> void:
 	var names := [["jump", "A", "점프"], ["gb", "S", "GB"], ["t360", "D", "360"], ["t720", "F", "720"]]
@@ -228,7 +246,7 @@ func _keys(u: float, h: float, k: Dictionary) -> void:
 	var on_ramp := float(racer.get("g", {}).get("ramp_t", -1.0)) >= 0.0
 	for i in names.size():
 		var key: String = names[i][0]
-		var ready := (not air) if i == 0 else (air and str(k.trick) == "")
+		var ready := (not air) if i == 0 else (air and (str(k.trick) == "" or str(k.next) == ""))
 		var lit: bool = float(keys[key]) > 0.0
 		var base := Color(0.15, 0.45, 0.85, 0.85) if ready else Color(0.2, 0.22, 0.3, 0.7)
 		if i == 0 and on_ramp and not air:

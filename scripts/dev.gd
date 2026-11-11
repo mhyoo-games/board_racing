@@ -1,6 +1,6 @@
 extends Node
 ## 개발용 자동 조작: godot -- --dev=<장면> --out=<폴더> 으로 실행하면 화면을 찍고 끝낸다. 평소에는 아무것도 안 함.
-## 장면: title, tracks, shop, help, online, race(컴퓨터가 대신 몰기), team, time, items, tour, pause, results
+## 장면: title, tracks, shop, help, online, race(컴퓨터가 대신 몰기), air(공중 묘기 8장), team, time, items, tour, pause, results
 
 var plan := ""
 var out := "/tmp/board_racing"
@@ -113,6 +113,24 @@ func _run() -> void:
 			main().menu.show_screen("help"); await wait(0.4); await shot("help")
 		"race":
 			await _race("race", [4.0, 7.0, 11.0, 16.0])
+		"air":
+			# 공중 묘기 모아 찍기: 내 보드가 묘기 중일 때만 (0.2초 넘게 띄어서) 8장
+			Game.mode = "race"
+			if track != "":
+				Game.track_id = track
+			main().start_race()
+			await wait(0.3)
+			var r = main().race
+			r.autopilot = true
+			var n := 0
+			var last := -9.0
+			while n < 8 and r.clock < 60.0:
+				await get_tree().process_frame
+				var k: Dictionary = r.humans[0].k
+				if r.state == "run" and k.air and str(k.trick) != "" and r.clock - last > 0.22 and float(k.trick_t) > 0.15:
+					last = r.clock
+					await shot("air_%d" % n)
+					n += 1
 		"team":
 			await _race("team", [5.0, 12.0])
 		"time":

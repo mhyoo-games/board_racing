@@ -22,6 +22,8 @@ func _init() -> void:
 	_riding()
 	_jumps()
 	_tricks()
+	_commands()
+	_features()
 	_gauge()
 	_surfaces()
 	_track_geometry()
@@ -74,7 +76,9 @@ func _data(bj: Dictionary) -> void:
 		ok(t.points.size() >= 8 and t.half_width >= 6.0 and t.laps >= 1, t.id + " 트랙 정의")
 		var has_ramp := false
 		for z in t.zones:
-			ok(z.type in ["ramp", "stairs", "ice", "gap", "pad"], t.id + " 구간 종류 " + str(z.type))
+			ok(z.type in ["ramp", "stairs", "ice", "gap", "pad", "spring", "ring"], t.id + " 구간 종류 " + str(z.type))
+			if z.type == "ramp":
+				ok(Rules.RAMPS.has(str(z.get("size", "normal"))), t.id + " 점프대 크기")
 			has_ramp = has_ramp or z.type == "ramp"
 		ok(has_ramp, t.id + " 점프대가 있다")
 
@@ -185,7 +189,7 @@ func _tricks() -> void:
 	ok(b.dash_t > 0.0, "EXCELLENT 착지는 살짝 부스터")
 	ok(b.gauge > a.gauge * 1.5, "EXCELLENT·큰 묘기는 게이지가 더 찬다")
 	# 시간이 모자라면 실패
-	var c := trick_jump(st, 0.3, ["720"])
+	var c := trick_jump(st, 0.3, ["storm"])
 	ok("fail" in c.evs and c.stumble_t > 0.0 and c.judge.word == "MISS", "땅에 닿기 전에 못 끝내면 실패")
 	ok(c.combo == 0, "실패하면 콤보가 끊긴다")
 	var sp0 := Rules.speed_of(c)
@@ -201,6 +205,102 @@ func _tricks() -> void:
 	# 묘기 능력치가 높으면 빨리 끝난다
 	var fast := Rules.board_stats(board("droplet"))
 	ok(Rules.trick_dur("720", fast) < Rules.trick_dur("720", st), "묘기 능력치가 높으면 빨리 끝난다")
+
+func air_time(st: Dictionary, ramp_t: float, g := {}) -> float:
+	var b := Rules.new_board(Vector2.ZERO, 0.0)
+	b.vel = Vector2(0, 28)
+	var gh := 0.0
+	var gg := {"h": 0.0, "kind": "road", "ramp_t": ramp_t}
+	gg.merge(g, true)
+	Rules.step(b, {"throttle": 1.0, "jump": true}, st, gg, DT)
+	var t := 0.0
+	while b.air and t < 6.0:
+		Rules.step(b, {"throttle": 1.0}, st, flat(), DT)
+		t += DT
+	return t
+
+func _commands() -> void:
+	var st := Rules.board_stats(board(Rules.START_BOARD))
+	# 커맨드 고르기
+	ok(Rules.trick_for("s", "") == "gb" and Rules.trick_for("d", "") == "360" and Rules.trick_for("f", "") == "720", "그냥 누르면 기본 묘기")
+	ok(Rules.trick_for("d", "U") == "front" and Rules.trick_for("d", "D") == "back", "↑D 앞구르기, ↓D 뒤구르기")
+	ok(Rules.trick_for("d", "LR") == "screw" and Rules.trick_for("d", "RL") == "screw", "←→D 꽈배기")
+	ok(Rules.trick_for("f", "DU") == "storm" and Rules.trick_for("f", "LDU") == "storm", "↓↑F 회오리 (앞에 다른 키가 있어도)")
+	ok(Rules.trick_for("f", "U") == "dfront" and Rules.trick_for("f", "UL") == "720", "마지막 키가 맞아야 한다")
+	ok(Rules.trick_for("s", "LR") == "wing" and Rules.trick_for("s", "U") == "nose", "S 커맨드")
+	for id in Rules.TRICKS:
+		var t: Dictionary = Rules.TRICKS[id]
+		ok(t.key in ["s", "d", "f"] and t.cmds.size() >= 1 and float(t.dur) > 0.2 and int(t.pts) >= 1, id + " 묘기 자료")
+		for c in t.cmds:
+			ok(Rules.trick_for(str(t.key), str(c)) == id, "%s 커맨드 %s" % [id, c])
+	# 커맨드 묘기는 같은 시간에 점수가 더 크다
+	var rate := func(id: String) -> float: return float(Rules.TRICKS[id].pts) / float(Rules.TRICKS[id].dur)
+	ok(rate.call("front") > rate.call("360") and rate.call("storm") > rate.call("720"), "커맨드 묘기가 더 이득")
+	# 오래 떠 있다
+	var t_norm := air_time(st, 0.95)
+	ok(t_norm > 1.4, "점프대 EXCELLENT 점프는 1.4초 넘게 뜬다 (오르막 속도 빼고) (%.2f초)" % t_norm)
+	ok(air_time(st, 0.95, {"ramp_pow": 1.12}) > t_norm + 0.1, "큰 점프대는 더 오래")
+	var hop := air_time(st, -1.0)
+	ok(hop > 0.4 and hop < 0.9, "그냥 폴짝은 짧게 (%.2f초)" % hop)
+	# 예약해서 이어 하기: 360 하는 중에 앞구르기를 누르면 끝나자마자 이어진다
+	var b := Rules.new_board(Vector2.ZERO, 0.0)
+	b.vel = Vector2(0, 28)
+	b.alt = 1.33; b.prev_g = 1.33
+	Rules.step(b, {"throttle": 1.0, "jump": true}, st, {"h": 1.33, "kind": "road", "ramp_t": 0.95}, DT)
+	b.vy = 17.0      # 큰 점프대에서 오르막 속도까지 얹은 정도
+	Rules.step(b, {"throttle": 1.0, "trick": "360"}, st, flat(), DT)
+	Rules.step(b, {"throttle": 1.0, "trick": "front"}, st, flat(), DT)
+	ok(b.trick == "360" and b.next == "front", "묘기 중에 누르면 예약")
+	var t := 0.0
+	var saw := false
+	while b.air and t < 4.0:
+		Rules.step(b, {"throttle": 1.0, "trick": "gb" if b.trick == "front" and b.next == "" else ""}, st, flat(), DT)
+		saw = saw or (b.trick == "front")
+		t += DT
+	ok(saw and b.judge.get("chain", 0) == 3 and b.stumble_t == 0.0, "세 개 이어 하기 성공 (%s)" % b.judge.get("label", ""))
+	ok(b.judge.label == "360 + 앞구르기 + GB", "이은 이름")
+	# 구르기 각도
+	var c := Rules.new_board(Vector2.ZERO, 0.0)
+	c.air = true; c.alt = 5.0; c.vy = 10.0
+	Rules.step(c, {"trick": "back"}, st, flat(), DT)
+	run(c, st, 0.36, {"throttle": 1.0}, flat())
+	ok(c.flip < -0.2 and c.flip > -0.8, "뒤구르기는 뒤로 돈다 (%.2f)" % c.flip)
+
+func _features() -> void:
+	var st := Rules.board_stats(board(Rules.START_BOARD))
+	# 스프링 발판은 저절로 튕긴다
+	var b := Rules.new_board(Vector2.ZERO, 0.0)
+	b.vel = Vector2(0, 25)
+	Rules.step(b, {"throttle": 1.0}, st, {"h": 0.0, "kind": "road", "ramp_t": -1.0, "spring": true}, DT)
+	ok(b.air and b.vy > Rules.SPRING_V - 1.0 and "spring" in b.events, "스프링 발판")
+	# 공중 고리
+	var k := Rules.new_board(Vector2.ZERO, 0.0)
+	k.air = true; k.alt = 5.2; k.vy = 0.0
+	var g0: float = k.gauge
+	var ring := {"h": -20.0, "kind": "gap", "ramp_t": -1.0, "ring": {"i": 0, "y": 6.0, "lat": 0.5, "r": 3.2}}
+	Rules.step(k, {"throttle": 1.0}, st, ring, DT)
+	ok(k.gauge > g0 and "ring" in k.events, "고리를 지나가면 게이지")
+	k.events.clear()
+	Rules.step(k, {"throttle": 1.0}, st, ring, DT)
+	ok(not ("ring" in k.events), "한 번 점프에 같은 고리는 한 번만")
+	var m := Rules.new_board(Vector2.ZERO, 0.0)
+	m.air = true; m.alt = 0.5; m.vy = 0.0
+	Rules.step(m, {"throttle": 1.0}, st, {"h": -20.0, "kind": "gap", "ramp_t": -1.0, "ring": {"i": 0, "y": 6.0, "lat": 0.0, "r": 3.2}}, DT)
+	ok(not ("ring" in m.events), "고리 아래로 지나가면 안 친다")
+	# 점프대 크기
+	var tr := Rules.build_track({"points": [[0, 0], [0, 200], [100, 200], [100, 0]], "half_width": 7.0, "zones": [
+		{"type": "ramp", "at": 0.1, "size": "small"}, {"type": "ramp", "at": 0.3, "size": "big"}, {"type": "spring", "at": 0.5}, {"type": "ring", "at": 0.32, "h": 6}]})
+	var sm: Dictionary = tr.zones[0]
+	var bg: Dictionary = tr.zones[1]
+	ok(float(sm.s1) - float(sm.s0) < float(bg.s1) - float(bg.s0) and float(sm.h) < float(bg.h), "작은·큰 점프대")
+	ok(tr.rings.size() == 1 and tr.zones.size() == 3, "고리는 구간과 따로")
+	var p := Rules.point_at(tr, float(bg.s1) - 0.5)
+	var gl := Rules.ground_at(tr, Rules.locate(tr, p.pos, p.i))
+	ok(gl.h > p.h + 2.2 and float(gl.ramp_pow) > 1.05, "큰 점프대 끝은 높다")
+	var rp := Rules.point_at(tr, float(tr.rings[0].s))
+	ok(Rules.ground_at(tr, Rules.locate(tr, rp.pos, rp.i)).has("ring"), "고리 근처에서 알려 준다")
+	var sp := Rules.point_at(tr, float(tr.zones[2].s1) - 1.0)
+	ok(Rules.ground_at(tr, Rules.locate(tr, sp.pos, sp.i)).spring, "스프링 구간")
 
 func _gauge() -> void:
 	var st := Rules.board_stats(board(Rules.START_BOARD))
@@ -297,7 +397,8 @@ func _track_geometry() -> void:
 			var p := Rules.point_at(tr, mid)
 			var gl2 := Rules.ground_at(tr, Rules.locate(tr, p.pos, p.i))
 			match str(z.type):
-				"ramp": ok(gl2.ramp_t > 0.3 and gl2.ramp_t < 0.7 and gl2.h > p.h + 0.4, def.id + " 점프대 오르막")
+				"ramp": ok(gl2.ramp_t > 0.3 and gl2.ramp_t < 0.7 and gl2.h > p.h + float(z.h) * 0.3, def.id + " 점프대 오르막")
+				"spring": ok(gl2.spring, def.id + " 스프링")
 				"gap": ok(gl2.kind == "gap" and gl2.h < -5.0, def.id + " 낭떠러지")
 				"stairs": ok(gl2.kind == "stairs", def.id + " 계단")
 				"ice": ok(gl2.kind == "ice", def.id + " 얼음")
@@ -415,7 +516,7 @@ func _full_laps() -> void:
 			var res := lap_run(def, st, skill, 7)
 			var tr: Dictionary = res.tr
 			var avg: float = res.t / tr.laps
-			print("  %s (실력 %.1f): %.1f초 (한 바퀴 %.1f초) 점프 %d 묘기 %d(EX %d) 실패 %d 떨어짐 %d 벽 %d 부스터 %d" % [def.id, skill, res.t, avg, res.jumps, res.ok, res.ex, res.fail, res.fell, res.walls, res.boosts])
+			print("  %s (실력 %.1f): %.1f초 (한 바퀴 %.1f초) 점프 %d 묘기 %d(EX %d) 실패 %d 떨어짐 %d 벽 %d 부스터 %d 최대 연속 %d 커맨드 %d 고리 %d" % [def.id, skill, res.t, avg, res.jumps, res.ok, res.ex, res.fail, res.fell, res.walls, res.boosts, res.chain, res.cmd, res.ring])
 			ok(res.dist >= tr.length * tr.laps, "%s 다 돈다 (실력 %.1f)" % [def.id, skill])
 			ok(avg > tr.length / 40.0 and avg < tr.length / 14.0, def.id + " 한 바퀴 시간이 그럴듯하다")
 			ok(res.ok >= tr.laps * 2, def.id + " 컴퓨터도 묘기를 한다")
@@ -424,6 +525,8 @@ func _full_laps() -> void:
 				ok(res.fell <= 1, def.id + " 잘하는 컴퓨터는 거의 안 떨어진다 (%d)" % res.fell)
 				ok(res.fail <= tr.laps, def.id + " 잘하는 컴퓨터는 묘기 실패가 적다 (%d)" % res.fail)
 				ok(res.boosts >= 1, def.id + " 부스터를 쓴다")
+				ok(res.chain >= 2, def.id + " 잘하는 컴퓨터는 묘기를 잇는다 (%d)" % res.chain)
+				ok(res.cmd >= 1, def.id + " 잘하는 컴퓨터는 커맨드 묘기도 쓴다 (%d)" % res.cmd)
 
 func lap_run(def: Dictionary, st: Dictionary, skill: float, seed: int) -> Dictionary:
 	var tr := Rules.build_track(def)
@@ -436,7 +539,7 @@ func lap_run(def: Dictionary, st: Dictionary, skill: float, seed: int) -> Dictio
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var plan := {}
-	var r := {"jumps": 0, "ok": 0, "ex": 0, "fail": 0, "fell": 0, "walls": 0, "boosts": 0}
+	var r := {"jumps": 0, "ok": 0, "ex": 0, "fail": 0, "fell": 0, "walls": 0, "boosts": 0, "chain": 0, "cmd": 0, "ring": 0}
 	var goal: float = tr.length * tr.laps
 	var fall_t := -1.0
 	while dist < goal and t < 500.0:
@@ -459,6 +562,10 @@ func lap_run(def: Dictionary, st: Dictionary, skill: float, seed: int) -> Dictio
 				"trick_ok":
 					r.ok += 1
 					if k.judge.word == "EXCELLENT": r.ex += 1
+					r.chain = maxi(int(r.chain), int(k.judge.get("chain", 1)))
+					for nm in str(k.judge.label).split(" + "):
+						if not (nm in ["GB", "360", "720"]): r.cmd += 1
+				"ring": r.ring += 1
 				"fail": r.fail += 1
 				"boost": r.boosts += 1
 				"fell":
