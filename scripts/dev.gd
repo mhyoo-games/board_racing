@@ -62,6 +62,8 @@ func _run() -> void:
 	match plan:
 		"title":
 			await shot("title")
+		"licenses":
+			main().menu._licenses(); await wait(0.6); await shot("licenses")
 		"boards":
 			# 보드·캐릭터 가까이 보기
 			var root := Node3D.new()

@@ -9,6 +9,7 @@ Godot 4.6(GDScript, GL Compatibility), 웹으로 내보내 GitHub Pages(`https:/
 
 ## 지킬 것
 
+- 라이선스 화면: `scripts/licenses.gd`가 Godot 엔진(MIT)과 그 안의 라이브러리(`Engine.get_license_text/get_copyright_info/get_license_info`), 갈무리 글꼴 전문(`assets/fonts/OFL.txt`, 내보내기 `include_filter`에 넣음), 그림 출처를 보여 준다. 처음 화면에서 연다. 상업·무료 상관없이 Godot 배포 조건이라 지우지 않는다. 새 에셋을 쓰면 여기 `credits`에도 적는다.
 - 옛 온라인 보드 레이싱에서 영감을 받았지만 **새로 만든 게임**이다. 다른 게임의 이름·캐릭터·보드·트랙·그림·음악을 쓰지 않고, 다른 회사·게임 이름을 README·화면·이력서에 넣지 않는다. 판정 단어(GOOD·NICE·EXCELLENT)·묘기 이름(GB·360·720)은 흔한 말이라 쓴다.
 - 그림: Kenney Platformer Kit(CC0, `assets/kit/LICENSE.txt`) — 캐릭터 5명(`character-*.glb`, 동작 idle·jump·fall·crouch·emote-yes), 나무·울타리·동전·꾸밈. 보드·길·점프대·계단·아치·탑·출발 문은 코드로 만든다(`scripts/board.gd`, `scripts/track_view.gd`). 글꼴: 갈무리(OFL).
 - 소리: `tools/sound/gen.py`가 표준 라이브러리로 합성 → `assets/sfx`, `assets/music` (곡 title·race·sky·rush). 결과 wav를 직접 고치지 말고 생성기를 고친다. 소리는 QOA로 압축되므로 반복 끝은 `get_length() × mix_rate`. 아이콘은 `tools/art/icon.py`.

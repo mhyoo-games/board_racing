@@ -103,18 +103,39 @@ func _title() -> void:
 	row.add_child(UI.button("캐릭터", func(): show_screen("riders"), 165, 24))
 	row.add_child(UI.button("조작 방법", func(): show_screen("help"), 165, 24))
 	v.add_child(row)
-	var snd := UI.button("소리: " + ("끔" if Sound.muted else "켬"), func(): pass, 340, 22)
+	var row2 := HBoxContainer.new()
+	row2.add_theme_constant_override("separation", 10)
+	var snd := UI.button("소리: " + ("끔" if Sound.muted else "켬"), func(): pass, 165, 22)
 	snd.custom_minimum_size.y = 46
 	snd.pressed.connect(func():
 		Sound.set_muted(not Sound.muted)
 		snd.text = "소리: " + ("끔" if Sound.muted else "켬"))
-	v.add_child(snd)
+	row2.add_child(snd)
+	var lic := UI.button("라이선스", _licenses, 165, 22)
+	lic.custom_minimum_size.y = 46
+	row2.add_child(lic)
+	v.add_child(row2)
 	var b := Game.board_def(Game.save.board)
 	var info := UI.label("타는 보드: " + b.name + "   ·   " + Game.rider_def(Game.save.rider).name, 24, UI.CREAM, true)
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(info)
 	_pin(info, Control.PRESET_BOTTOM_RIGHT, -560, -64, -30, -26)
 	_focus_first(v)
+
+## 만든 것들·라이선스 (Godot 엔진·글꼴·그림)
+func _licenses() -> void:
+	var l: Control = preload("res://scripts/licenses.gd").new()
+	l.credits = [
+		"바람보드 레이싱 — 유민혁 (minhyuk94)",
+		"게임 엔진: Godot Engine (MIT 라이선스) — godotengine.org/license",
+		"캐릭터·나무·동전 등: Kenney Platformer Kit (CC0 1.0) — kenney.nl",
+		"글꼴: 갈무리 Galmuri (SIL Open Font License 1.1) — github.com/quiple/galmuri",
+		"효과음·곡·보드·길·점프대: 코드로 새로 만듦",
+		"친구와 온라인: 처음 연결 정보만 공개 메시지 중계 ntfy.sh를 거침",
+	]
+	l.font_size = 18
+	l.closed.connect(func(): _focus_first(self))
+	add_child(l)
 
 func _pick_mode(m: String) -> void:
 	Game.mode = m
