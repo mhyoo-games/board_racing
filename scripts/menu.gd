@@ -126,7 +126,7 @@ func _title() -> void:
 func _licenses() -> void:
 	var l: Control = preload("res://scripts/licenses.gd").new()
 	l.credits = [
-		"바람보드 레이싱 — 유민혁 (minhyuk94)",
+		"바람보드 레이싱 — 심심풀이",
 		"게임 엔진: Godot Engine (MIT 라이선스) — godotengine.org/license",
 		"캐릭터·나무·동전 등: Kenney Platformer Kit (CC0 1.0) — kenney.nl",
 		"글꼴: 갈무리 Galmuri (SIL Open Font License 1.1) — github.com/quiple/galmuri",
